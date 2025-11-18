@@ -1,50 +1,51 @@
 package com.omnigaurd.solilos.controller;
-
+import com.omnigaurd.solilos.model.ChatRequest;
+import com.omnigaurd.solilos.model.ChatResponse;
 import org.springframework.ai.chat.client.ChatClient;
-import org.springframework.ai.openai.OpenAiChatModel;
 import org.springframework.ai.google.genai.GoogleGenAiChatModel;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
 @RestController
 @RequestMapping("/api")
+@CrossOrigin(origins = "*")
 public class AiChat {
 
-    private final ChatClient openAiChatClient;
     private final ChatClient geminiChatClient;
 
-    public AiChat(OpenAiChatModel openAiChatModel,
-                  GoogleGenAiChatModel googleGenAiChatModel) {
-        this.openAiChatClient = ChatClient.builder(openAiChatModel).build();
+    public AiChat(GoogleGenAiChatModel googleGenAiChatModel) {
         this.geminiChatClient = ChatClient.builder(googleGenAiChatModel).build();
     }
 
     @GetMapping("/health")
-    public String health(){
+    public String health() {
         return "Working fine";
     }
 
-    @GetMapping("/ai-chat-openai")
-    public String chatWithOpenAi(){
-        return openAiChatClient.prompt()
-                .user("Say this is a test")
+    @PostMapping("/ai-chat-gemini")
+    public ChatResponse chatWithGemini(@RequestBody ChatRequest request) {
+        String systemPrompt = request.getSystemPrompt() != null ? request.getSystemPrompt() : "";
+        String userMessage = request.getMessage();
+        String fullPrompt = systemPrompt + "\n\n" + userMessage;
+
+        if (request.getCodeContext() != null) {
+            fullPrompt += "\n\nCode Context: " + request.getCodeContext().toString();
+        }
+        System.out.println("Fullprompt details===>"+fullPrompt);
+        String content = geminiChatClient.prompt()
+                .user(fullPrompt)
                 .call()
                 .content();
+
+        int inputTokens = estimateTokens(fullPrompt);
+        int outputTokens = estimateTokens(content);
+
+        return new ChatResponse(
+                content,
+                new ChatResponse.TokenUsage(inputTokens, outputTokens)
+        );
     }
 
-    @GetMapping("/ai-chat-gemini")
-    public String chatWithGemini(){
-        return geminiChatClient.prompt()
-                .user("@GetMapping(\"/ai-chat-openai\")\n" +
-                        "    public String chatWithOpenAi(){\n" +
-                        "        return openAiChatClient.prompt()\n" +
-                        "                .user(\"Say this is a test\")\n" +
-                        "                .call()\n" +
-                        "                .content();\n" +
-                        "    } " +
-                        "can you write the unit test for me for this controller? i am using java + spring boot + mavent + use junit + mockit for writing test")
-                .call()
-                .content();
+    private int estimateTokens(String text) {
+        return text.split("\\s+").length;
     }
 }
