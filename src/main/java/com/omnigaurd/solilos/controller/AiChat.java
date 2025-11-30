@@ -1,6 +1,8 @@
 package com.omnigaurd.solilos.controller;
+
 import com.omnigaurd.solilos.model.ChatRequest;
 import com.omnigaurd.solilos.model.ChatResponse;
+import com.omnigaurd.solilos.service.ContextEnricher;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.google.genai.GoogleGenAiChatModel;
 import org.springframework.web.bind.annotation.*;
@@ -11,9 +13,11 @@ import org.springframework.web.bind.annotation.*;
 public class AiChat {
 
     private final ChatClient geminiChatClient;
+    private final ContextEnricher contextEnricher;
 
-    public AiChat(GoogleGenAiChatModel googleGenAiChatModel) {
+    public AiChat(GoogleGenAiChatModel googleGenAiChatModel, ContextEnricher contextEnricher) {
         this.geminiChatClient = ChatClient.builder(googleGenAiChatModel).build();
+        this.contextEnricher = contextEnricher;
     }
 
     @GetMapping("/health")
@@ -23,20 +27,20 @@ public class AiChat {
 
     @PostMapping("/ai-chat-gemini")
     public ChatResponse chatWithGemini(@RequestBody ChatRequest request) {
-        String systemPrompt = request.getSystemPrompt() != null ? request.getSystemPrompt() : "";
-        String userMessage = request.getMessage();
-        String fullPrompt = systemPrompt + "\n\n" + userMessage;
+        String enrichedPrompt = contextEnricher.buildEnrichedPrompt(
+                request.getMessage(),
+                request.getSystemPrompt(),
+                request.getCodebaseContext()
+        );
 
-        if (request.getCodeContext() != null) {
-            fullPrompt += "\n\nCode Context: " + request.getCodeContext().toString();
-        }
-        System.out.println("Fullprompt details===>"+fullPrompt);
+        System.out.println("Enriched Prompt Length: " + enrichedPrompt.length());
+
         String content = geminiChatClient.prompt()
-                .user(fullPrompt)
+                .user(enrichedPrompt)
                 .call()
                 .content();
 
-        int inputTokens = estimateTokens(fullPrompt);
+        int inputTokens = estimateTokens(enrichedPrompt);
         int outputTokens = estimateTokens(content);
 
         return new ChatResponse(
